@@ -61,6 +61,10 @@ Create a `terraform.tfvars` file (this file is gitignored and will never be comm
 ```hcl
 do_token     = "dop_v1_your_token_here"
 project_name = "myapp"   # prefix for all resource names
+
+kafka_topics = [
+  { name = "esb.portal.user.consume.v1" },
+]
 ```
 
 > **How to create a token with minimum required scopes:**
@@ -106,7 +110,7 @@ terraform init
 terraform plan
 ```
 
-You should see: 1 SSH key, 1 Droplet, 1 Firewall, 2 local files.
+You should see: 1 SSH key, 1 Droplet, 1 Firewall, 1 Kafka topic provisioner, 2 local files.
 
 ### 5. Deploy
 
@@ -121,8 +125,9 @@ Type `yes` when prompted. This will:
 3. Create the Droplet (Ubuntu 24.04, 4GB RAM, Singapore region)
 4. Install Docker on the Droplet
 5. Deploy MongoDB and Kafka via Docker Compose on the Droplet
-6. Create a firewall allowing only your IP
-7. Generate `generated/local-docker-compose.yml` with the Droplet IP pre-filled
+6. Create Kafka topics defined in `terraform.tfvars`
+7. Create a firewall allowing only your IP
+8. Generate `generated/local-docker-compose.yml` with the Droplet IP pre-filled
 
 Once complete, Terraform prints the connection info:
 
@@ -181,6 +186,22 @@ ssh -i generated/id_ed25519 root@<droplet_ip> "docker ps"
 ssh -i generated/id_ed25519 root@<droplet_ip> "docker compose logs -f"
 ```
 
+### Add a new Kafka topic
+
+Add the topic to `kafka_topics` in `terraform.tfvars`:
+
+```hcl
+kafka_topics = [
+  { name = "esb.portal.user.consume.v1" },
+  { name = "new.topic.v1" },
+  { name = "high.throughput.topic.v1", partitions = 6 },
+]
+```
+
+Then run `terraform apply`. No destroy needed — only the topic provisioner is re-run. Existing topics are skipped (`--if-not-exists`).
+
+> **Note:** Removing a topic from tfvars does **not** delete it from Kafka. It simply won't be recreated on the next fresh Droplet.
+
 ### IP address changed (e.g. moved to a different network)
 
 Just re-apply — Terraform auto-detects your new IP and updates the firewall. The Droplet itself is **not** recreated:
@@ -209,15 +230,16 @@ Type `yes` to confirm. This removes the Droplet, firewall, and SSH key from Digi
 droplet-infra/
 ├── .gitignore              # Ignores state, tfvars, generated/
 ├── versions.tf             # Terraform & provider version constraints
-├── variables.tf            # Input variables (do_token, project_name, region, size, etc.)
+├── variables.tf            # Input variables (do_token, project_name, region, size, kafka_topics, etc.)
 ├── data.tf                 # Auto-detects your laptop's public IP
-├── main.tf                 # SSH key, Droplet, Docker install, compose upload
+├── main.tf                 # SSH key, Droplet, Docker install, compose upload, Kafka topic creation
 ├── firewall.tf             # Firewall rules (your IP only)
 ├── outputs.tf              # Connection strings, SSH command
 ├── templates/
 │   ├── cloud-docker-compose.yml.tpl   # Droplet compose (MongoDB + Kafka)
 │   └── local-docker-compose.yml.tpl   # Laptop compose (Jaeger + Redis + Kafka-UI)
-├── terraform.tfvars        # Your DO token (gitignored, create manually)
+├── terraform.tfvars        # Your DO token + kafka_topics (gitignored, create manually)
+├── docs/plans/             # Implementation plans and design decisions
 └── generated/              # Created by Terraform (gitignored)
     ├── id_ed25519           # SSH private key
     └── local-docker-compose.yml  # Rendered local compose
@@ -233,6 +255,10 @@ project_name = "myapp"                   # required: prefix for all resource nam
 region       = "sgp1"                    # default: Singapore
 droplet_size = "s-2vcpu-4gb"             # default: 4GB RAM / 2 CPUs ($24/mo)
 droplet_name = ""                        # default: {project_name}-dev-db
+
+kafka_topics = [                         # required: topics to create after provisioning
+  { name = "esb.portal.user.consume.v1" },
+]
 ```
 
 ## Troubleshooting

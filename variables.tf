@@ -32,3 +32,12 @@ variable "droplet_name" {
   type        = string
   default     = ""
 }
+
+variable "kafka_topics" {
+  description = "Kafka topics to create after provisioning"
+  type = list(object({
+    name               = string
+    partitions         = optional(number, 1)
+    replication_factor = optional(number, 1)
+  }))
+}

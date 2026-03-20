@@ -51,6 +51,34 @@ resource "digitalocean_droplet" "main" {
   }
 }
 
+# ─── Kafka Topics ──────────────────────────────────────────
+
+resource "terraform_data" "kafka_topics" {
+  depends_on = [digitalocean_droplet.main]
+
+  triggers_replace = [var.kafka_topics, digitalocean_droplet.main.id]
+
+  connection {
+    type        = "ssh"
+    user        = "root"
+    private_key = tls_private_key.droplet.private_key_openssh
+    host        = digitalocean_droplet.main.ipv4_address
+  }
+
+  provisioner "remote-exec" {
+    inline = concat(
+      # Wait for Kafka broker to be ready (up to 60s)
+      [
+        "for i in $(seq 1 12); do docker exec ${var.project_name}-kafka-cloud kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1 && break || sleep 5; done",
+      ],
+      # Create each topic
+      [for t in var.kafka_topics :
+        "docker exec ${var.project_name}-kafka-cloud kafka-topics --create --topic ${t.name} --partitions ${t.partitions} --replication-factor ${t.replication_factor} --bootstrap-server localhost:9092 --if-not-exists"
+      ]
+    )
+  }
+}
+
 # ─── Generate local docker-compose ─────────────────────────
 
 resource "local_file" "local_compose" {
