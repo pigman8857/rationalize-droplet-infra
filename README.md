@@ -239,7 +239,10 @@ droplet-infra/
 │   ├── cloud-docker-compose.yml.tpl   # Droplet compose (MongoDB + Kafka)
 │   └── local-docker-compose.yml.tpl   # Laptop compose (Jaeger + Redis + Kafka-UI)
 ├── terraform.tfvars        # Your DO token + kafka_topics (gitignored, create manually)
-├── docs/plans/             # Implementation plans and design decisions
+├── docs/
+│   ├── TERRAFORM_FILES.md  # Detailed explanation of every Terraform file and setting
+│   ├── WORKFLOW.md          # Mermaid diagrams (dependency graph, setup flow, daily ops)
+│   └── plans/               # Implementation plans and design decisions
 └── generated/              # Created by Terraform (gitignored)
     ├── id_ed25519           # SSH private key
     └── local-docker-compose.yml  # Rendered local compose
