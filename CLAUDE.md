@@ -23,7 +23,7 @@ The Droplet is **ephemeral** — created at the start of the day, destroyed at t
 - `data.tf` — auto-detects laptop's public IP
 - `outputs.tf` — connection strings, SSH command
 - `templates/` — Docker Compose templates for cloud and local
-- `docs/plans/` — implementation plans and design decisions
+- `docs/` — documentation (TERRAFORM_FILES.md, WORKFLOW.md, plans/)
 - `generated/` — Terraform-generated files (gitignored)
 
 ## Key patterns
