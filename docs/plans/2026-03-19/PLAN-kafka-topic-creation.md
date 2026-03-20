@@ -1,6 +1,8 @@
 # Plan: Auto-create Kafka Topics After Provisioning
 
-*Created: 2026-03-20*
+*Created: 2026-03-19 ~15:00–18:00 UTC+7*
+*Implemented: 2026-03-20 ~10:30 UTC+7*
+*Finished: 2026-03-20 11:18 UTC+7*
 
 ## Goal
 
@@ -82,10 +84,22 @@ resource "terraform_data" "kafka_topics" {
 }
 ```
 
-Key details:
-- **Readiness check**: Polls `kafka-broker-api-versions` every 5s (up to 60s) before attempting topic creation. More reliable than a fixed `sleep`.
-- **`--if-not-exists`**: Makes topic creation idempotent — safe to re-run.
-- **`triggers_replace`**: Re-runs when the topic list changes or the Droplet is recreated.
+### How it works
+
+1. **Dependency** — `depends_on` ensures this resource runs only after the Droplet is fully provisioned (Docker + Kafka already running).
+2. **Trigger** — `triggers_replace` tells Terraform to destroy and recreate this resource when the topic list changes or the Droplet is recreated (new ID). On first `terraform apply`, the resource doesn't exist yet, so it always runs.
+3. **Connection** — SSHs into the existing Droplet as root using the generated key.
+4. **Execution** — The `remote-exec` provisioner runs two things in order:
+   - **Readiness loop**: Tries `kafka-broker-api-versions` every 5s, up to 12 attempts (60s). Breaks as soon as Kafka responds.
+   - **Topic creation**: Loops through each topic in `var.kafka_topics` and runs `kafka-topics --create`. The `--if-not-exists` flag skips topics that already exist.
+
+### Behavior on subsequent applies
+
+| Scenario | What happens |
+|----------|-------------|
+| No changes to topics or Droplet | Nothing — resource already exists, triggers unchanged |
+| New topic added to tfvars | Resource recreated → all topics re-run → existing ones skipped, new one created |
+| Droplet destroyed & recreated | Resource recreated → all topics created on the fresh Droplet |
 
 ## Files touched
 
@@ -119,3 +133,29 @@ ssh -i generated/id_ed25519 root@<droplet_ip> \
 ```
 
 Expected output should include all topics defined in `terraform.tfvars`.
+
+## Test Results (2026-03-20)
+
+All tests passed on a live Droplet with Kafka UI verification.
+
+### 1. Initial `terraform apply` — topic creation works
+- `esb.portal.user.consume.v1` created automatically and visible in Kafka UI.
+
+### 2. Adding a topic without destroying the Droplet — works
+- Added `esb.portal.user.produce.v1` to tfvars and ran `terraform apply`.
+- Only `terraform_data.kafka_topics` was recreated — Droplet was untouched.
+- Both topics visible in Kafka UI.
+- Produced a message to `esb.portal.user.produce.v1` via Kafka UI — NestJS backend consumer received it as expected.
+
+### 3. Removing a topic from tfvars — does NOT delete it from Kafka
+- Removed `esb.portal.user.produce.v1` from tfvars and ran `terraform apply`.
+- The topic still exists on the running Droplet — the provisioner only creates, never deletes.
+- This is acceptable for the ephemeral usage pattern: removed topics won't be recreated on the next fresh Droplet.
+
+### Caveat
+
+| Action | Effect |
+|--------|--------|
+| Add topic to tfvars | Created on next `terraform apply` (no destroy needed) |
+| Remove topic from tfvars | **Not deleted** from running Kafka — persists until Droplet is destroyed |
+| Topics created by app at runtime (e.g., `esb.portal.user.created.v1` by NestJS) | Not managed by Terraform — recreated by the app on each deploy |
